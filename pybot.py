@@ -1,11 +1,12 @@
 import json
 import logging
 import os
-import random
 from telegram import Update
 from telegram.ext import ContextTypes, CommandHandler
-from VideoUtils import VideoUtils
-from WithRocketBot import RocketBot
+from bot_game import BotHandler, game_validator
+from video_utils import VideoUtils
+from rocket_bot import RocketBot
+from bisect_machine import StateBisect
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -21,61 +22,94 @@ if not bot_token:
     except KeyError:
         raise Exception("Not bot_token key present in config.json file")
 
+game_handler = BotHandler()
 
-def bisect(n, mapper, tester):
-    """
-    Runs a bisection.
 
-    - `n` is the number of elements to be bisected
-    - `mapper` is a callable that will transform an integer from "0" to "n"
-      into a value that can be tested
-    - `tester` returns true if the value is within the "right" range
-    """
+def get_user_data(update: Update, new_one: bool = False):
+    user_id = update.effective_user.id
+    user_game = game_handler.get_user_game(str(user_id))
+    if user_game['updated_at'] is None or new_one:
+        video_file = VideoUtils.get_video()
+        user_game_state = StateBisect(total_elements=video_file.frames)
+        game_handler.set_user_game(
+            user_id=str(update.effective_user.id),
+            game_state=user_game_state.serialize_bisect_state()
+        )
+    else:
+        user_game_state = StateBisect.get_bisection_from_state(user_game['state'])
+    return user_id, user_game, user_game_state
 
-    if n < 1:
-        raise ValueError("Cannot bissect an empty array")
 
-    left = 0
-    right = n - 1
-
-    while left + 1 < right:
-        mid = int((left + right) / 2)
-
-        val = mapper(mid)
-
-        if tester(val):
-            right = mid
-        else:
-            left = mid
-
-    return mapper(right)
+async def send_game_message(update: Update,  context:ContextTypes.DEFAULT_TYPE, user_game_state):
+    frame = user_game_state.get_mid_value()
+    await context.bot.send_photo(
+        chat_id=update.effective_chat.id, photo=VideoUtils.video_frame_url(frame)
+    )
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Did rocket launch yet? answer in /rocket_launched ( /Yes or /No )"
+    )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="Hello Let's play a Rocket Launch Game, type /check to get an image"
+        text="Hello Let's play a Rocket Launch Game, type /get_image to get an image"
     )
 
 
 async def get_frame(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    video_file = VideoUtils.get_video()
-    frame = random.randint(1, video_file.frames + 1)
-    await context.bot.send_photo(
-        chat_id=update.effective_chat.id, photo=VideoUtils.video_frame_url(frame)
-    )
+    user_id, user_game, user_game_state = get_user_data(update, new_one=True)
+    await send_game_message(update, context, user_game_state)
 
-# TODO: Add BotServer instance for getting game status
-# TODO: After getting a frame, update game status
-# TODO: After showing a frame, every answer should be caught
-# TODO: Add a reminder handler if the user deletes the chat
-# TODO: Add a reset handler
-# TODO: Game status should check user game for reducing frame list based on iterations
-# TODO: Modify bisect function, the logic should wait to user async interaction
+
+async def update_bisect(
+        user_id: int,
+        user_game_state: StateBisect,
+        user_game: dict,
+        bisect_status: bool,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE
+):
+    game_handler.set_user_game(
+        user_id=str(user_id),
+        game_state=user_game_state.serialize_bisect_state()
+    )
+    if bisect_status:
+        await send_game_message(update, context, user_game_state)
+    else:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"We found the frame at {user_game['updated_at']}!"
+        )
+
+
+async def launch_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    response = "".join(context.args)
+    user_id, user_game, user_game_state = get_user_data(update)
+
+    if str(response).lower() in ['yes', 'y', 'true', 'no', 'n', 'false']:
+        bisect_status = user_game_state.bisect_interaction(lambda n: game_validator(str(response)))
+        await update_bisect(user_id, user_game_state, user_game, bisect_status, update, context)
+
+
+async def launch_yes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id, user_game, user_game_state = get_user_data(update)
+    bisect_status = user_game_state.bisect_interaction(lambda n: True)
+    await update_bisect(user_id, user_game_state, user_game, bisect_status, update, context)
+
+
+async def launch_no(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id, user_game, user_game_state = get_user_data(update)
+    bisect_status = user_game_state.bisect_interaction(lambda n: False)
+    await update_bisect(user_id, user_game_state, user_game, bisect_status, update, context)
 
 
 def start_bot():
     pybot = RocketBot(bot_token)
     pybot.register_handler(CommandHandler('start', start))
-    pybot.register_handler(CommandHandler('check', get_frame))
+    pybot.register_handler(CommandHandler('get_image', get_frame))
+    pybot.register_handler(CommandHandler('rocket_launched', launch_response))
+    pybot.register_handler(CommandHandler('Yes', launch_yes))
+    pybot.register_handler(CommandHandler('No', launch_no))
     pybot.run()
