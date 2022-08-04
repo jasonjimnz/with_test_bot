@@ -36,5 +36,5 @@ can use config.json file if you want to
 
 ```shell
 docker build -t telegram_bot .
-docker run -d --env TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN" telegram_bot
+docker run --env TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN" telegram_bot
 ```
