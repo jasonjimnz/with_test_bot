@@ -32,7 +32,7 @@ class VideoUtils(object):
         pass
 
     @classmethod
-    def get_client(cls, timeout: int = 30) -> Client:
+    def get_client(cls, timeout: int = 90) -> Client:
         """
         Returns a HttpClient instance
         :param timeout: Timeout in seconds for the HTTP Request
