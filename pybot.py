@@ -85,7 +85,7 @@ async def update_bisect(
     else:
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f"We found the frame {user_game_state.right} at user_game['updated_at']"
+            text=f"We found the frame {user_game_state.right} at {user_game['updated_at']}"
         )
 
 
