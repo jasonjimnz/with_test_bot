@@ -40,7 +40,7 @@ def get_user_data(update: Update, new_one: bool = False):
     return user_id, user_game, user_game_state
 
 
-async def send_game_message(update: Update,  context:ContextTypes.DEFAULT_TYPE, user_game_state):
+async def send_game_message(update: Update,  context: ContextTypes.DEFAULT_TYPE, user_game_state):
     frame = user_game_state.get_mid_value()
     await context.bot.send_photo(
         chat_id=update.effective_chat.id, photo=VideoUtils.video_frame_url(frame)
@@ -54,12 +54,17 @@ async def send_game_message(update: Update,  context:ContextTypes.DEFAULT_TYPE, 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="Hello Let's play a Rocket Launch Game, type /get_image to get an image"
+        text="Hello Let's play a Rocket Launch Game, type /get_image to "
+             "get an image or /help for getting instructions"
     )
 
 
 async def get_frame(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id, user_game, user_game_state = get_user_data(update, new_one=True)
+    user_id, user_game, user_game_state = get_user_data(update)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Getting images, this could take few seconds"
+    )
     await send_game_message(update, context, user_game_state)
 
 
@@ -80,7 +85,8 @@ async def update_bisect(
     else:
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f"We found the frame at {user_game['updated_at']}!"
+            text=f"We found the frame {user_game_state.right} at"
+                 f" {user_game['updated_at'].strftime('%a, %d %b %Y %H:%M:%S')}!"
         )
 
 
@@ -105,6 +111,34 @@ async def launch_no(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update_bisect(user_id, user_game_state, user_game, bisect_status, update, context)
 
 
+async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_messages = [
+        "We're going to play \"Has rocket launched?\" Game",
+        "After using /start_game for forcing restart or /get_image",
+        "for getting an image (it will also start the game if it",
+        "has not started) you will be asked to tell the bot if",
+        "the rocket has launched or not, based on the image that",
+        "the bot gives you, you will be able to choose directly",
+        "from the bot response or you can use the command",
+        "/rocket_launched followed by Yes or No (it is not",
+        "case sensitive)",
+
+    ]
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=" ".join(help_messages)
+    )
+
+
+async def restart_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id, user_game, user_game_state = get_user_data(update, new_one=True)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Getting images, this could take few seconds"
+    )
+    await send_game_message(update, context, user_game_state)
+
+
 def start_bot():
     pybot = RocketBot(bot_token)
     pybot.register_handler(CommandHandler('start', start))
@@ -112,4 +146,6 @@ def start_bot():
     pybot.register_handler(CommandHandler('rocket_launched', launch_response))
     pybot.register_handler(CommandHandler('Yes', launch_yes))
     pybot.register_handler(CommandHandler('No', launch_no))
+    pybot.register_handler(CommandHandler('help', show_help))
+    pybot.register_handler(CommandHandler('start_game', restart_game))
     pybot.run()
